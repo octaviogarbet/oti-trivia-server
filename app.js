@@ -5,6 +5,7 @@ const app = express()
 const port = 3000
 const sessions = []
 const WebSocket = require("ws")
+const queryString = require("query-string");
 
 //initialize a simple http server
 const server = http.createServer(app);
@@ -27,6 +28,12 @@ app.get('/game/:id', (req, res) => {
 
 app.post('/join/:id', (req, res) => {
   if (sessions.length > +req.params.id){
+    const { body } = req;
+    const game = sessions[+req.params.id];
+    if (game.players.indexOf(req.params.player) === -1) {
+      game.players.push(body.player)
+      game.scoreBoard.push({name: body.player, points: 0})
+    }
     res.send(sessions[+req.params.id])
   } else {
     res.send({})
@@ -143,16 +150,26 @@ server.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`)
 });
 
+const getUniqueID = () => {
+  const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+  return s4() + s4() + '-' + s4();
+};
+
 //initialize the WebSocket server instance
-const wss = new WebSocket.Server({ server, path: 'websocket' });
+const wss = new WebSocket.Server({ server, path: '/websocket' });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
 
-  const parameters = url.parse(req.url, true);
-
-  ws.uid = wss.getUniqueID();
-  ws.session = {uid: parameters.query.session};
-  ws.client = parameters.query.name;
+  const [_path, params] = req?.url?.split("?");
+  const connectionParams = queryString.parse(params);
+  // const parameters = url.parse(req.url, true);
+  //console.log(req);
+  console.log(connectionParams);
+  ws.uid = getUniqueID();
+  ws.session = {uid: connectionParams.gameId};
+  if (connectionParams.player) {
+    ws.client = connectionParams.player;
+  }
 
   //connection is up, let's add a simple simple event
   ws.on('message', (message) => {
@@ -169,6 +186,11 @@ wss.on('connection', (ws) => {
       });
   });
 
+  wss.clients.forEach(client => {
+    if (client != ws && client.session.uid == ws.session.uid) {
+      client.send(JSON.stringify({ type: 'update', body: sessions[+connectionParams.gameId] }));
+    }    
+  });
   //send immediatly a feedback to the incoming connection    
   ws.send('Hi there, I am a WebSocket server');
 });
