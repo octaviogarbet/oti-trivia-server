@@ -47,6 +47,11 @@ app.put('/game/:id/reset', (req, res) => {
     sessions[+req.params.id].answering = null
     sessions[+req.params.id].answeringPosition = 0
     sessions[+req.params.id].canAnswer = false
+    wss.clients.forEach(client => {
+      if (client.session.uid == req.params.id) {
+        client.send(JSON.stringify({ type: 'update', body: sessions[+req.params.id] }));
+      }    
+    });
     res.send({})
   } else {
     res.send({})
@@ -56,6 +61,11 @@ app.put('/game/:id/reset', (req, res) => {
 app.put('/game/:id/start', (req, res) => {
   if (sessions.length > +req.params.id){
     sessions[+req.params.id].canAnswer = true
+    wss.clients.forEach(client => {
+      if (client.session.uid == req.params.id) {
+        client.send(JSON.stringify({ type: 'update', body: sessions[+req.params.id] }));
+      }    
+    });
     res.send({})
   } else {
     res.send({})
@@ -63,13 +73,20 @@ app.put('/game/:id/start', (req, res) => {
 })
 
 app.put('/game/:id/wrong', (req, res) => {
-  if (sessions.length > +req.params.id){
+  if (sessions.length > +req.params.id) {
+    const currentParticipantIndex = sessions[+req.params.id].scoreBoard.findIndex(p => p.name === sessions[+req.params.id].answering);
+    sessions[+req.params.id].scoreBoard[currentParticipantIndex].points = sessions[+req.params.id].scoreBoard[currentParticipantIndex].points - (sessions[+req.params.id].nextQuestion.points / 3);
     if (sessions[+req.params.id].answerOrder.length === (sessions[+req.params.id].answeringPosition - 1)) {
       sessions[+req.params.id].answeringPosition = 0;
     } else {
       sessions[+req.params.id].answeringPosition++;
     }
     sessions[+req.params.id].answering = sessions[+req.params.id].answerOrder[sessions[+req.params.id].answeringPosition];
+    wss.clients.forEach(client => {
+      if (client.session.uid == req.params.id) {
+        client.send(JSON.stringify({ type: 'update', body: sessions[+req.params.id] }));
+      }    
+    });
     res.send({})
   } else {
     res.send({})
@@ -78,13 +95,25 @@ app.put('/game/:id/wrong', (req, res) => {
 
 app.put('/game/:id/correct', (req, res) => {
   if (sessions.length > +req.params.id){
-    sessions[+req.params.id].answering
-
-    sessions[+req.params.id].nextQuestion
-    pointsTable
-    scoreBoard
-    nextQuestion.category
-    nextQuestion.points
+    const currentParticipantIndex = sessions[+req.params.id].scoreBoard.findIndex(p => p.name === sessions[+req.params.id].answering);
+    sessions[+req.params.id].scoreBoard[currentParticipantIndex].points = sessions[+req.params.id].scoreBoard[currentParticipantIndex].points + sessions[+req.params.id].nextQuestion.points;
+    sessions[+req.params.id].answering = null
+    sessions[+req.params.id].answeringPosition = 0
+    sessions[+req.params.id].answerOrder = []
+    sessions[+req.params.id].canAnswer = false
+    const columnPosition = sessions[+req.params.id].pointsTable.findIndex(c => c.category === sessions[+req.params.id].nextQuestion.category);
+    console.log(sessions[+req.params.id].pointsTable)
+    console.log(sessions[+req.params.id].pointsTable[columnPosition].questions)
+    const squareIndex = sessions[+req.params.id].pointsTable[columnPosition].questions.findIndex(c => c.points === sessions[+req.params.id].nextQuestion.points);
+    sessions[+req.params.id].pointsTable[columnPosition].questions[squareIndex].answered = true;
+    sessions[+req.params.id].answering = [];
+    sessions[+req.params.id].banned = [];
+    sessions[+req.params.id].nextQuestion = null
+    wss.clients.forEach(client => {
+      if (client.session.uid == req.params.id) {
+        client.send(JSON.stringify({ type: 'update', body: sessions[+req.params.id] }));
+      }    
+    });
     res.send({})
   } else {
     res.send({})
@@ -93,13 +122,21 @@ app.put('/game/:id/correct', (req, res) => {
 
 app.put('/game/:id/skip', (req, res) => {
   if (sessions.length > +req.params.id){
-    sessions[+req.params.id].answering
-
-    sessions[+req.params.id].nextQuestion
-    pointsTable
-    scoreBoard
-    nextQuestion.category
-    nextQuestion.points
+    sessions[+req.params.id].answering = null
+    sessions[+req.params.id].answeringPosition = 0
+    sessions[+req.params.id].answerOrder = []
+    sessions[+req.params.id].canAnswer = false
+    const column = sessions[+req.params.id].pointsTable.find(c => c.category === sessions[+req.params.id].nextQuestion.category);
+    const square = column.questions.find(c => c.points === sessions[+req.params.id].nextQuestion.points);
+    square.answered = true;
+    sessions[+req.params.id].answering = [];
+    sessions[+req.params.id].banned = [];
+    sessions[+req.params.id].nextQuestion = null
+    wss.clients.forEach(client => {
+      if (client.session.uid == req.params.id) {
+        client.send(JSON.stringify({ type: 'update', body: sessions[+req.params.id] }));
+      }    
+    });
     res.send({})
   } else {
     res.send({})
@@ -109,7 +146,14 @@ app.put('/game/:id/skip', (req, res) => {
 app.put('/game/:id/answer', (req, res) => {
   const { body } = req;
   if (sessions.length > +req.params.id) {
-    sessions[+req.params.id].nextQuestion = { category: body.category, points: 25}
+    const column = sessions[+req.params.id].pointsTable.find(c => c.category === body.category);
+    const square = column.questions.find(c => c.answered === false);
+    sessions[+req.params.id].nextQuestion = { category: body.category, points: square.points};
+    wss.clients.forEach(client => {
+      if (client.session.uid == req.params.id) {
+        client.send(JSON.stringify({ type: 'update', body: sessions[+req.params.id] }));
+      }    
+    });
     res.send({})
   } else {
     res.send({})
@@ -173,17 +217,38 @@ wss.on('connection', (ws, req) => {
 
   //connection is up, let's add a simple simple event
   ws.on('message', (message) => {
-    JSON.parse(message)
-
-      //log the received message and send it back to the client
-      console.log('received: %s', message);
-      ws.send(`Hello, you sent -> ${message}`);
+    const body = JSON.parse(message)
+    if (body) {
+      console.log(body.type);
+      // handle push messages
+      if (body.type === 'push') {
+        console.log(ws.client)
+        const game = sessions[+ws.session.uid]
+        console.log(game)
+        if (sessions[+ws.session.uid].canAnswer) {
+          if (sessions[+ws.session.uid].answerOrder.length) {
+            if (sessions[+ws.session.uid].answerOrder.indexOf(ws.client) === -1 && sessions[+ws.session.uid].banned.indexOf(ws.client) === -1) {
+              sessions[+ws.session.uid].answerOrder.push(ws.client)
+            }
+          } else {
+            sessions[+ws.session.uid].answerOrder.push(ws.client)
+            sessions[+ws.session.uid].answering = ws.client;
+            sessions[+ws.session.uid].answeringPosition = 0;
+          }
+        } else {
+          if (sessions[+ws.session.uid].banned.indexOf(ws.client) === -1) {
+            sessions[+ws.session.uid].banned.push(ws.client)
+          }
+        }
+      }
+      console.log(sessions[+ws.session.uid])
 
       wss.clients.forEach(client => {
-        if (client != ws) {
-          client.send(`Hello, broadcast message -> ${message}`);
+        if (client.session.uid == ws.session.uid) {
+          client.send(JSON.stringify({ type: 'update', body: sessions[+ws.session.uid] }));
         }    
       });
+    }
   });
 
   wss.clients.forEach(client => {
@@ -192,5 +257,4 @@ wss.on('connection', (ws, req) => {
     }    
   });
   //send immediatly a feedback to the incoming connection    
-  ws.send('Hi there, I am a WebSocket server');
 });
