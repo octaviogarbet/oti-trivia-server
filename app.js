@@ -261,35 +261,39 @@ wss.on('connection', (ws, req) => {
 
     //connection is up, let's add a simple simple event
     ws.on('message', (message) => {
-      const body = JSON.parse(message)
-      if (body) {
-        // handle push messages
-        if (body.type === 'push') {
-          console.log(ws.client)
-          const game = sessions[+ws.session.uid]
-          console.log(game)
-          if (sessions[+ws.session.uid].canAnswer) {
-            if (sessions[+ws.session.uid].answerOrder.length) {
-              if (sessions[+ws.session.uid].answerOrder.indexOf(ws.client) === -1 && sessions[+ws.session.uid].banned.indexOf(ws.client) === -1) {
+      try {
+        const body = JSON.parse(message)
+        if (body) {
+          // handle push messages
+          if (body.type === 'push') {
+            console.log(ws.client)
+            const game = sessions[+ws.session.uid]
+            console.log(game)
+            if (sessions[+ws.session.uid].canAnswer) {
+              if (sessions[+ws.session.uid].answerOrder.length) {
+                if (sessions[+ws.session.uid].answerOrder.indexOf(ws.client) === -1 && sessions[+ws.session.uid].banned.indexOf(ws.client) === -1) {
+                  sessions[+ws.session.uid].answerOrder.push(ws.client)
+                }
+              } else {
                 sessions[+ws.session.uid].answerOrder.push(ws.client)
+                sessions[+ws.session.uid].answering = ws.client;
+                sessions[+ws.session.uid].answeringPosition = 0;
               }
             } else {
-              sessions[+ws.session.uid].answerOrder.push(ws.client)
-              sessions[+ws.session.uid].answering = ws.client;
-              sessions[+ws.session.uid].answeringPosition = 0;
-            }
-          } else {
-            if (sessions[+ws.session.uid].banned.indexOf(ws.client) === -1) {
-              sessions[+ws.session.uid].banned.push(ws.client)
+              if (sessions[+ws.session.uid].banned.indexOf(ws.client) === -1) {
+                sessions[+ws.session.uid].banned.push(ws.client)
+              }
             }
           }
-        }
 
-        wss.clients.forEach(client => {
-          if (client.session.uid == ws.session.uid) {
-            client.send(JSON.stringify({ type: 'update', body: sessions[+ws.session.uid] }));
-          }    
-        });
+          wss.clients.forEach(client => {
+            if (client.session.uid == ws.session.uid) {
+              client.send(JSON.stringify({ type: 'update', body: sessions[+ws.session.uid] }));
+            }
+          });
+        }
+      } catch (e) {
+        console.log(e);
       }
     });
 
